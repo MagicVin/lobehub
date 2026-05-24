@@ -272,6 +272,18 @@ export interface RuntimeExecutorContext {
   streamManager: IStreamEventManager;
   toolExecutionService: ToolExecutionService;
   topicId?: string;
+  /**
+   * Trace-pipeline sink for context engine input/output. Wired by
+   * AgentRuntimeService so the trace recorder can pick CE data up
+   * out-of-band, keeping the heavy CE payload (agentDocuments, systemRole, …)
+   * out of the `events` array and therefore out of the Redis state pipeline.
+   *
+   * Context: agent-runtime state blob was hitting Upstash Redis 10MB limit
+   * because contextEngine.input (agentDocuments full inline) accounted for
+   * ~83% of each step. Routing CE through this callback keeps the heavy
+   * payload in trace only, reducing per-step Redis state from ~3.4MB to ~6KB.
+   */
+  tracingContextEngine?: (input: unknown, output: unknown) => void;
   userId?: string;
   userTimezone?: string;
 }
@@ -714,7 +726,7 @@ export const createRuntimeExecutors = (
 
         processedMessages = await serverMessagesEngine(contextEngineInput);
 
-        // Emit context engine event for tracing
+        // Hand context engine input/output to the trace sink out-of-band.
         // Omit large/redundant fields to reduce snapshot size:
         // - input.messages: reconstructible from step's messagesBaseline + messagesDelta
         // - input.toolsConfig: static per operation, ~47KB of manifests repeated every call_llm step
@@ -724,14 +736,10 @@ export const createRuntimeExecutors = (
           toolsConfig: _toolsConfig,
           ...contextEngineInputLite
         } = contextEngineInput;
-        events.push({
-          input: {
-            ...contextEngineInputLite,
-            toolCount: _toolsConfig?.tools?.length ?? 0,
-          },
-          output: processedMessages,
-          type: 'context_engine_result',
-        } as any);
+        ctx.tracingContextEngine?.(
+          { ...contextEngineInputLite, toolCount: _toolsConfig?.tools?.length ?? 0 },
+          processedMessages,
+        );
       } else {
         processedMessages = llmPayload.messages;
       }
@@ -1186,6 +1194,47 @@ export const createRuntimeExecutors = (
             }
 
             continue;
+          }
+
+          // LOBE-9523: cancel/interrupt path — the model-runtime stream was aborted
+          // before reaching the post-stream finalize at line 1078, so the DB row is
+          // still the LOADING_FLAT placeholder. Persist whatever partial content the
+          // `onText` / `onThinking` / `onToolsCalling` callbacks already accumulated
+          // so (a) a subsequent reload still shows the user's streamed answer, and
+          // (b) the agent_runtime_end uiMessages snapshot doesn't carry placeholder
+          // values that would clobber the client's in-memory streamed content.
+          if (interrupted && (content || thinkingContent || toolsCalling.length > 0)) {
+            try {
+              const persistedTools =
+                toolsCalling.length > 0
+                  ? toolsCalling.map((t) => ({
+                      ...t,
+                      arguments: sanitizeToolCallArguments(t.arguments),
+                    }))
+                  : undefined;
+              const interruptedReasoning = thinkingContent
+                ? { content: thinkingContent }
+                : undefined;
+              const interruptedMetadata: Record<string, any> = { interruptedMidStream: true };
+              if (currentStepUsage && typeof currentStepUsage === 'object') {
+                Object.assign(interruptedMetadata, currentStepUsage);
+              }
+              await ctx.messageModel.update(assistantMessageItem.id, {
+                content,
+                metadata: interruptedMetadata,
+                reasoning: interruptedReasoning,
+                tools: persistedTools,
+              });
+              log(
+                '[%s] Interrupted finalize: persisted partial content (c=%d r=%d tools=%d)',
+                operationLogId,
+                content.length,
+                thinkingContent.length,
+                toolsCalling.length,
+              );
+            } catch (persistErr) {
+              log('[%s] Interrupted finalize update failed: %O', operationLogId, persistErr);
+            }
           }
 
           throw error;
