@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { FilterOptions } from '../type';
-import { htmlToMarkdown } from './htmlToMarkdown';
+import { htmlToMarkdown, MAX_HTML_SIZE } from './htmlToMarkdown';
 
 interface TestItem {
   file: string;
@@ -48,6 +48,21 @@ describe('htmlToMarkdown', () => {
     expect(result.content).toBeDefined();
     // The output content should be smaller than the input due to truncation
     expect(result.content.length).toBeLessThan(html.length);
+  }, 20000);
+
+  it('should preserve body content and head metadata when a large head exceeds 1 MB', () => {
+    const largeHeadContent = 'x'.repeat(MAX_HTML_SIZE + 1000);
+    const bodyContent =
+      'Important body content that must remain available after trimming oversized HTML.';
+    const html = `<html lang="en"><head><title>Large Page</title><meta name="description" content="Large page description"><script>${largeHeadContent}</script></head><body class="page"><article><p>${bodyContent}</p></article></body></html>`;
+
+    const result = htmlToMarkdown(html, {
+      filterOptions: { enableReadability: false },
+      url: 'https://example.com',
+    });
+
+    expect(result.content).toContain(bodyContent);
+    expect(result.title).toBe('Large Page');
   }, 20000);
 
   it('should not crash on HTML with invalid CSS selectors ()', () => {
