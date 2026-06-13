@@ -1,10 +1,9 @@
 'use client';
 
+import { BRANDING_NAME } from '@lobechat/business-const';
 import { type LobeHubProps } from '@lobehub/ui/brand';
 import { LobeHub } from '@lobehub/ui/brand';
 import { memo } from 'react';
-
-import { isCustomBranding } from '@/const/version';
 
 import CustomLogo from './Custom';
 
@@ -14,7 +13,7 @@ interface ProductLogoProps extends LobeHubProps {
 }
 
 export const ProductLogo = memo<ProductLogoProps>((props) => {
-  if (isCustomBranding) {
+  if (BRANDING_NAME !== 'LobeHub') {
     return <CustomLogo {...props} />;
   }
 

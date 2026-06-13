@@ -42,7 +42,7 @@ const CustomImageLogo = memo<Omit<ImageProps, 'alt' | 'src'> & { size: number }>
       <Image
         alt={BRANDING_NAME}
         height={size}
-        src={BRANDING_LOGO_URL}
+        src={BRANDING_LOGO_URL || '/icons/icon-192x192.png'}
         unoptimized={true}
         width={size}
         {...rest}
