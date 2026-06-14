@@ -12,16 +12,15 @@ import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/selectors';
 import { AI_RUNTIME_OPERATION_TYPES } from '@/store/chat/slices/operation/types';
 import { shinyTextStyles } from '@/styles';
-import {
-  calculateOperationUsageMetrics,
-  hasOperationUsageMetrics,
-  mergeOperationUsageMetrics,
-  type OperationUsageMetrics,
-} from '@/utils/operationUsageMetrics';
+import { calculateOperationUsageMetrics } from '@/utils/operationUsageMetrics';
 
 import { contextSelectors, dataSelectors, useConversationStore } from '../store';
 import { type ActivityKey, resolveOperationActivity } from '../utils/operationActivity';
-import { parseStatusPhrases, pickStableStatusPhrase } from './OpStatusTray/logic';
+import { parseStatusPhrases, pickRotatingStatusPhrase } from './OpStatusTray/logic';
+
+// Cycle the generating phrase like a carousel so a long-running task doesn't
+// stare back with the same line the whole time.
+const STATUS_PHRASE_ROTATION_MS = 4000;
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   container: css`
@@ -109,6 +108,22 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
+  `,
+  statusPhrase: css`
+    @keyframes op-status-tray-phrase-enter {
+      from {
+        transform: translateY(3px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    display: inline-block;
+    animation: op-status-tray-phrase-enter 0.4s ease;
   `,
   timerValue: css`
     flex: none;
@@ -218,7 +233,6 @@ const OpStatusTray = memo<OpStatusTrayProps>(({ topAttached }) => {
     let latestActivityStart = -1;
     let statusSeed: string | undefined;
     let stepCount = 0;
-    let usageMetrics: OperationUsageMetrics | undefined;
     const runtimeOperationIds: string[] = [];
 
     for (const op of ops) {
@@ -236,9 +250,6 @@ const OpStatusTray = memo<OpStatusTrayProps>(({ topAttached }) => {
 
       runtimeOperationIds.push(op.id);
       stepCount = Math.max(stepCount, normalizeStepCount(op.metadata.stepCount));
-      if (hasOperationUsageMetrics(op.metadata.usageMetrics)) {
-        usageMetrics = mergeOperationUsageMetrics(usageMetrics, op.metadata.usageMetrics);
-      }
 
       if (earliestStart === undefined || op.metadata.startTime < earliestStart) {
         earliestStart = op.metadata.startTime;
@@ -251,7 +262,6 @@ const OpStatusTray = memo<OpStatusTrayProps>(({ topAttached }) => {
       startTime: earliestStart,
       statusSeed,
       steps: stepCount,
-      usageMetrics,
     };
   });
   const operationsByMessage = useChatStore((s) => s.operationsByMessage);
@@ -269,17 +279,16 @@ const OpStatusTray = memo<OpStatusTrayProps>(({ topAttached }) => {
     [operationState.operationIdsKey],
   );
 
-  // Fallback for older / reloaded operation state: derive usage from messages
-  // produced by this operation when live operation metadata is unavailable.
-  const fallbackMetrics = useMemo(() => {
+  // Single source of truth: derive the operation total from the same per-message
+  // usage shown on each bubble, so the tray always equals their sum. (Updates as
+  // messages refresh — no separate live accumulation that can drift.)
+  const usageMetrics = useMemo(() => {
     return calculateOperationUsageMetrics(dbMessages, operationIds, operationsByMessage);
   }, [dbMessages, operationIds, operationsByMessage]);
 
   if (!operationState.startTime) return null;
 
-  const { totalCost, totalTokens } = hasOperationUsageMetrics(operationState.usageMetrics)
-    ? operationState.usageMetrics
-    : fallbackMetrics;
+  const { totalCost, totalTokens } = usageMetrics;
   const elapsed = now - operationState.startTime;
   const costLabel = t('chat:opStatusTray.cost');
   const stepLabel = t('chat:opStatusTray.steps');
@@ -290,10 +299,12 @@ const OpStatusTray = memo<OpStatusTrayProps>(({ topAttached }) => {
       returnObjects: true,
     }),
   );
+  const rotationStep = Math.floor(elapsed / STATUS_PHRASE_ROTATION_MS);
   const randomGeneratingStatus =
-    pickStableStatusPhrase(
+    pickRotatingStatusPhrase(
       generatingPhrases,
       operationState.statusSeed ?? String(operationState.startTime),
+      rotationStep,
     ) ?? t('chat:opStatusTray.status.generating');
   const statusText =
     operationState.activity === 'generating'
@@ -372,7 +383,11 @@ const OpStatusTray = memo<OpStatusTrayProps>(({ topAttached }) => {
     >
       <span className={cx(styles.metric, styles.statusMetric)}>
         <ActivityGlyph />
-        <span className={cx(styles.statusText, shinyTextStyles.shinyText)}>{statusText}...</span>
+        <span className={styles.statusText}>
+          <span className={styles.statusPhrase} key={statusText}>
+            <span className={shinyTextStyles.shinyText}>{statusText}...</span>
+          </span>
+        </span>
         <span className={styles.timerValue}>{formatElapsedClockTime(elapsed)}</span>
       </span>
 

@@ -1201,6 +1201,9 @@ When I am ___, I need ___
   'tab.about': 'About',
   'tab.advanced': 'Advanced',
   'tab.advanced.appUpdates.title': 'App updates',
+  'tab.advanced.gatewayMode.desc':
+    'Run supported agent tasks through the cloud Gateway by default. Individual agents can override this from the chat menu.',
+  'tab.advanced.gatewayMode.title': 'Gateway Mode',
   'tab.advanced.toolsAndDiagnostics.title': 'Tools and diagnostics',
   'tab.addAgentSkill': 'Add Agent Skill',
   'tab.advanced.updateChannel.canary': 'Canary',
@@ -2015,7 +2018,6 @@ When I am ___, I need ___
   'workspace.wizard.step1.slug.invalidReserved': 'That slug is reserved. Please choose another.',
   'workspace.wizard.step1.slug.label': 'Workspace URL',
   'workspace.wizard.step1.slug.placeholder': 'example-team',
-  'workspace.wizard.step1.slug.prefix': 'lobehub.com/',
   'workspace.wizard.step1.slug.required': 'Workspace URL is required',
   'workspace.wizard.step1.slug.taken': 'This URL is already taken',
   'workspace.wizard.step1.subtitle': 'Unlock Agent Collaboration With Your Teammates',
