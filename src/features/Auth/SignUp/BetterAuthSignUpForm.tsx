@@ -6,7 +6,7 @@ import { Form, Input, type InputRef } from 'antd';
 import { Lock, Mail } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { AuthCard } from '@/features/AuthCard';
 import { AuthAgreement } from '@/features/AuthShell';
@@ -62,9 +62,12 @@ const BetterAuthSignUpForm = () => {
           ]}
         >
           <Input
+            autoComplete="email"
+            inputMode="email"
             placeholder={t('betterAuth.signup.emailPlaceholder')}
             ref={emailInputRef}
             size="large"
+            type="email"
             prefix={
               <Icon
                 icon={Mail}
@@ -93,6 +96,7 @@ const BetterAuthSignUpForm = () => {
           ]}
         >
           <Input.Password
+            autoComplete="new-password"
             placeholder={t('betterAuth.signup.passwordPlaceholder')}
             ref={passwordInputRef}
             size="large"
@@ -122,6 +126,7 @@ const BetterAuthSignUpForm = () => {
           ]}
         >
           <Input.Password
+            autoComplete="new-password"
             placeholder={t('betterAuth.signup.confirmPasswordPlaceholder')}
             size="large"
             prefix={

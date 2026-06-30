@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { type ReactNode } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import * as useActiveWorkspaceIdModule from '@/business/client/hooks/useActiveWorkspaceId';
@@ -16,7 +16,7 @@ interface WorkspaceStateMock {
   isWorkspaceLoading: boolean;
   switchToPersonal: () => void;
   switchWorkspace: (id: string) => void;
-  workspaces: { id: string; slug: string }[];
+  workspaces: { id: string; lockedOut?: boolean; slug: string }[];
 }
 
 const createState = (overrides: Partial<WorkspaceStateMock> = {}): WorkspaceStateMock => ({

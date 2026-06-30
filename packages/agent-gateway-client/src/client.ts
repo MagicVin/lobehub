@@ -240,9 +240,9 @@ export class AgentStreamClient extends TypedEmitter {
           // what exits resume mode and decides completion. We deliberately do
           // NOT arm a timeout to guess completion from silence: an empty replay
           // no longer means "finished" (the DO may simply have hibernated its
-          // event buffer), and guessing was exactly the LOBE-10443 multi-device
+          // event buffer), and guessing was exactly the multi-device
           // false-cancel bug. If `resume_complete` never arrives (e.g. a
-          // rolled-back DO that predates LOBE-10443), we just keep waiting — a
+          // rolled-back DO that predates the authoritative resume_complete fix), we just keep waiting — a
           // safe, recoverable state, with heartbeat loss still forcing reconnect
           // — instead of cancelling a live run.
           if (this.resumeOnConnect && !this.lastEventId) {
@@ -252,7 +252,7 @@ export class AgentStreamClient extends TypedEmitter {
 
           // Request all buffered events (covers events pushed before WS connected).
           // `wantStatus` opts into the authoritative `resume_complete` reply
-          // (LOBE-10443): this client knows how to consume it, so a current
+          // this client knows how to consume it, so a current
           // gateway will hand back the real session status. Legacy gateways
           // ignore the flag and just replay — we then rely on live events, never
           // guessing completion from silence.
@@ -283,13 +283,24 @@ export class AgentStreamClient extends TypedEmitter {
           const agentEvent: AgentStreamEvent = message.event;
           if (message.id) this.lastEventId = message.id;
 
+          // A single WebSocket is multiplexed: alongside this op's events it may
+          // carry forwarded events from other operations (e.g. broadcast council
+          // members mirrored onto the supervisor's channel). A terminal event
+          // ends the SESSION only when it belongs to THIS op — a member
+          // finishing must not disconnect the supervisor's socket and stop
+          // sibling/supervisor streaming. Events with no operationId (legacy
+          // gateway) are treated as this op's, preserving old behavior.
+          const isOwnTerminal =
+            (agentEvent.type === 'agent_runtime_end' || agentEvent.type === 'error') &&
+            (!agentEvent.operationId || agentEvent.operationId === this.operationId);
+
           if (this.resumeMode) {
             // Buffer events during resume — will be deduplicated and emitted after replay
             this.resumeBuffer.push({ event: agentEvent, id: message.id });
             this.scheduleResumeFlush();
 
-            // Terminal events still end the session even in resume mode
-            if (agentEvent.type === 'agent_runtime_end' || agentEvent.type === 'error') {
+            // Only this op's terminal ends the session (even in resume mode).
+            if (isOwnTerminal) {
               this.sessionEnded = true;
               this.flushResumeBuffer();
               this.disconnect();
@@ -299,8 +310,10 @@ export class AgentStreamClient extends TypedEmitter {
 
           this.emit('agent_event', agentEvent);
 
-          // Terminal events — session is done, no need to reconnect
-          if (agentEvent.type === 'agent_runtime_end' || agentEvent.type === 'error') {
+          // This op's terminal — session is done, no need to reconnect. A
+          // forwarded member terminal is still emitted above (so its handler can
+          // finalize that member) but must NOT tear down this connection.
+          if (isOwnTerminal) {
             this.sessionEnded = true;
             this.disconnect();
           }
@@ -309,7 +322,7 @@ export class AgentStreamClient extends TypedEmitter {
 
         case 'resume_complete': {
           // Authoritative status from the DO, sent right after resume replay
-          // (LOBE-10443) — this is the definitive end-of-replay marker, so
+          // — this is the definitive end-of-replay marker, so
           // cancel the pending debounce flush and act on it immediately.
           if (this.resumeFlushTimer) {
             clearTimeout(this.resumeFlushTimer);

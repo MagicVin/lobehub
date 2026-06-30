@@ -22,6 +22,12 @@ export type ListLocalFileSortOrder = 'asc' | 'desc';
 
 export interface ListLocalFileParams {
   /**
+   * Working directory a relative `path` resolves against (the device-bound
+   * directory, injected by the server runtime — not model-supplied). Absolute
+   * paths ignore it; absent → the daemon's process cwd.
+   */
+  cwd?: string;
+  /**
    * Maximum number of files to return
    * @default 100
    */
@@ -59,6 +65,8 @@ export interface MoveLocalFileParams {
 }
 
 export interface MoveLocalFilesParams {
+  /** Working directory each item's relative paths resolve against. See {@link ListLocalFileParams.cwd}. */
+  cwd?: string;
   items: MoveLocalFileParams[];
 }
 
@@ -81,12 +89,16 @@ export interface RenameLocalFileResult {
 }
 
 export interface LocalReadFileParams {
+  /** Working directory a relative `path` resolves against. See {@link ListLocalFileParams.cwd}. */
+  cwd?: string;
   fullContent?: boolean;
   loc?: [number, number];
   path: string;
 }
 
 export interface LocalReadFilesParams {
+  /** Working directory each relative path resolves against. See {@link ListLocalFileParams.cwd}. */
+  cwd?: string;
   paths: string[];
 }
 
@@ -95,6 +107,8 @@ export interface WriteLocalFileParams {
    * Content to write
    */
   content: string;
+  /** Working directory a relative `path` resolves against. See {@link ListLocalFileParams.cwd}. */
+  cwd?: string;
 
   /**
    * File path to write to
@@ -335,6 +349,8 @@ export interface GrepContentResult {
 
 // Glob types — same rationale as Grep above.
 export interface GlobFilesParams {
+  /** Maximum number of results to collect. When omitted, callers may apply their own default. */
+  limit?: number;
   pattern: string;
   /** Working directory scope. When `pattern` is relative, it is joined with this scope. Defaults to the current working directory. */
   scope?: string;
@@ -351,6 +367,8 @@ export interface GlobFilesResult {
 
 // Edit types
 export interface EditLocalFileParams {
+  /** Working directory a relative `file_path` resolves against. See {@link ListLocalFileParams.cwd}. */
+  cwd?: string;
   file_path: string;
   new_string: string;
   old_string: string;

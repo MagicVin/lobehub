@@ -24,6 +24,7 @@ import { taskListSelectors } from '@/store/task/selectors';
 import type { TaskGroupItem, TaskListItem } from '@/store/task/slices/list/initialState';
 
 import { createTaskModal } from '../CreateTaskModal';
+import type { TaskItemRouteScope } from '../features/AgentTaskItem';
 import AgentTaskItem from '../features/AgentTaskItem';
 import { taskDetailPath } from '../shared/taskDetailPath';
 import HiddenColumnsPanel from './HiddenColumnsPanel';
@@ -74,13 +75,19 @@ const optimisticMoveTask = (
   });
 };
 
-const KanbanBoard = memo(() => {
+interface KanbanBoardProps {
+  /** When set, scopes the board (and task creation) to a single agent. */
+  agentId?: string;
+  routeScope?: TaskItemRouteScope;
+}
+
+const KanbanBoard = memo<KanbanBoardProps>(({ agentId, routeScope }) => {
   const { t } = useTranslation('chat');
   const navigate = useWorkspaceAwareNavigate();
   const { allowed: canEditTask } = usePermission('create_content');
 
   const useFetchTaskGroupList = useTaskStore((s) => s.useFetchTaskGroupList);
-  useFetchTaskGroupList({ allAgents: true });
+  useFetchTaskGroupList(agentId ? { agentId } : { allAgents: true });
 
   const taskGroups = useTaskStore(taskListSelectors.taskGroups);
   const isInit = useTaskStore(taskListSelectors.isTaskGroupListInit);
@@ -143,12 +150,14 @@ const KanbanBoard = memo(() => {
   const handleCreateTask = useCallback(() => {
     if (!canEditTask) return;
     createTaskModal({
+      agentId,
+      lockAssignee: !!agentId,
       onCreated: (task) => {
-        navigate(taskDetailPath(task.identifier, task.agentId));
+        navigate(taskDetailPath(task.identifier, agentId ? task.agentId : undefined));
       },
       showInlineToggle: false,
     });
-  }, [canEditTask, navigate]);
+  }, [agentId, canEditTask, navigate]);
 
   const handleHideColumn = useCallback(
     (columnKey: string) => {
@@ -234,6 +243,7 @@ const KanbanBoard = memo(() => {
               columnKey={col.key}
               droppable={canEditTask && col.droppable}
               key={col.key}
+              routeScope={routeScope}
               tasks={(group?.tasks ?? []) as TaskListItem[]}
               total={group?.total ?? 0}
               onCreate={col.key === 'backlog' ? handleCreateTask : undefined}
@@ -260,7 +270,7 @@ const KanbanBoard = memo(() => {
               width: COLUMN_WIDTH - 8,
             }}
           >
-            <AgentTaskItem task={activeTask} variant="compact" />
+            <AgentTaskItem routeScope={routeScope} task={activeTask} variant="compact" />
           </div>
         ) : null}
       </DragOverlay>

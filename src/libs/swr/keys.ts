@@ -412,10 +412,21 @@ export const deviceKeys = {
     deviceId,
     path,
   ]),
+  gitBranch: def('device:gitBranch', (deviceId: string, path: string) => [
+    'device:gitBranch',
+    deviceId,
+    path,
+  ]),
   gitBranches: def('device:gitBranches', (deviceId: string, path: string) => [
     'device:gitBranches',
     deviceId,
     path,
+  ]),
+  gitLinkedPR: def('device:gitLinkedPR', (deviceId: string, path: string, branch: string) => [
+    'device:gitLinkedPR',
+    deviceId,
+    path,
+    branch,
   ]),
   gitRemoteBranches: def('device:gitRemoteBranches', (deviceId: string, dirPath: string) => [
     'device:gitRemoteBranches',
@@ -432,12 +443,6 @@ export const deviceKeys = {
       baseRef,
     ],
   ),
-  gitInfo: def('device:gitInfo', (deviceId: string, path: string, isGithub: boolean) => [
-    'device:gitInfo',
-    deviceId,
-    path,
-    isGithub,
-  ]),
   gitWorkingTreeStatus: def('device:gitWorkingTreeStatus', (deviceId: string, path: string) => [
     'device:gitWorkingTreeStatus',
     deviceId,
@@ -548,10 +553,10 @@ export const chatToolKeys = {
 };
 
 // =========================================================================
-// UI-layer keys (features / routes / components). Same rule as above: every
-// prefix below is deliberately kept OUT of `CACHE_TIERS` (memory-only). Names
-// avoid colliding with cached prefixes — e.g. share/topicInfo is `share:` not
-// `topic:`, portal header is `portal:` not `document:`.
+// UI-layer keys (features / routes / components). Prefixes below stay
+// memory-only unless explicitly listed in `CACHE_TIERS`. Names avoid colliding
+// with cached prefixes — e.g. share/topicInfo is `share:` not `topic:`, portal
+// header is `portal:` not `document:`.
 // =========================================================================
 
 // ---- stats (settings/stats + user header counts) ------------------------
@@ -594,12 +599,22 @@ export const messengerKeys = {
 
 // ---- verify (deliverable judging) ---------------------------------------
 export const verifyKeys = {
+  criteria: def('verify:criteria', () => ['verify:criteria']),
   instruction: def('verify:instruction', (documentId: string) => [
     'verify:instruction',
     documentId,
   ]),
+  reportBundle: def('verify:reportBundle', (verifyRunId: string) => [
+    'verify:reportBundle',
+    verifyRunId,
+  ]),
   results: def('verify:results', (operationId: string) => ['verify:results', operationId]),
   rubric: def('verify:rubric', (rubricId: string) => ['verify:rubric', rubricId]),
+  rubricCriteria: def('verify:rubricCriteria', (rubricId: string) => [
+    'verify:rubricCriteria',
+    rubricId,
+  ]),
+  rubrics: def('verify:rubrics', () => ['verify:rubrics']),
   state: def('verify:state', (operationId: string) => ['verify:state', operationId]),
   tracing: def('verify:tracing', (tracingId: string) => ['verify:tracing', tracingId]),
 };
@@ -732,16 +747,24 @@ export const topicActionKeys = {
   openNewOrSave: def('topicAction:openNewOrSave', () => ['topicAction:openNewOrSave']),
 };
 
-// ---- misc remaining domains (memory-only; off CACHE_TIERS) --------------
+// ---- misc remaining domains ---------------------------------------------
 export const homeKeys = {
   dailyBrief: def('home:dailyBrief', (userId: string) => ['home:dailyBrief', userId]),
 };
+
+/**
+ * Daily task-template recommendation cache schema version. Bump this when the
+ * persisted recommendation row shape changes incompatibly so desktop clients
+ * stop reading stale localStorage SWR entries.
+ */
+export const TASK_TEMPLATE_RECOMMENDATION_CACHE_VERSION = 2;
+const TASK_TEMPLATE_DAILY_RECOMMEND_ROOT = `taskTemplate:listDailyRecommend:v${TASK_TEMPLATE_RECOMMENDATION_CACHE_VERSION}`;
+
 export const taskTemplateKeys = {
   listDailyRecommend: def(
-    'taskTemplate:listDailyRecommend',
-    (interestsKey: string, refreshSeed: unknown, recommendationCount: number, locale: string) => [
-      'taskTemplate:listDailyRecommend',
-      interestsKey,
+    TASK_TEMPLATE_DAILY_RECOMMEND_ROOT,
+    (refreshSeed: unknown, recommendationCount: number, locale: string) => [
+      TASK_TEMPLATE_DAILY_RECOMMEND_ROOT,
       refreshSeed,
       recommendationCount,
       locale,

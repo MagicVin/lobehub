@@ -28,6 +28,13 @@ export interface ServerSubAgentRunParams {
 
 export interface ServerSubAgentRunResult {
   /**
+   * Reason the child failed to start, when `started` is false. Surfaced to the
+   * parent agent's tool result so a `callAgent` dispatch failure is diagnosable
+   * (e.g. "Agent not found", config/scheduling error) instead of an opaque
+   * "failed to start" — see issue #16257.
+   */
+  error?: string;
+  /**
    * Whether the child op was actually forked. `false` means the child failed to
    * start (e.g. the operation row could not be created/scheduled): no completion
    * bridge will ever fire, so the caller must surface an inline tool error
@@ -119,6 +126,14 @@ export interface ToolExecutionContext {
    * result; the member barrier backfills + resumes/finishes the parked supervisor.
    */
   agentMember?: ServerAgentMemberRunner;
+  /**
+   * The assistant message that carries this tool call (the runtime's
+   * `payload.parentMessageId`). Distinct from `messageId`, which is the source
+   * *user* message. Tools that need to anchor back to the exact tool-call turn
+   * (e.g. createTask recording its `context.origin`) must use this, not
+   * `messageId`.
+   */
+  assistantMessageId?: string;
   /** Current page document ID for page-scoped conversations */
   documentId?: string | null;
   /**
@@ -185,6 +200,17 @@ export interface ToolExecutionContext {
   /** Topic ID for sandbox session management */
   topicId?: string;
   userId?: string;
+  /**
+   * Device-bound working directory resolved when the operation was created
+   * (`resolveDeviceWorkingDirectory`: topic override > workingDirByDevice >
+   * device default). Injected by device-proxy runtimes as the tool call's
+   * cwd/scope so commands and file ops land in the bound directory instead of
+   * the daemon's `process.cwd()` (= `/` for a Finder/Dock-launched app).
+   *
+   * NOT the conversation `scope` above — that is the operation's thread/group
+   * scope and is unrelated to the filesystem working directory.
+   */
+  workingDirectory?: string;
   /**
    * Workspace ID that scopes ownership for any model/service the runtime
    * instantiates. When unset the runtime falls back to personal mode

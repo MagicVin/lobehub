@@ -6,8 +6,9 @@ import type {
   NewChatGroup,
   NewChatGroupAgent,
 } from '../schemas';
-import { chatGroups, chatGroupsAgents } from '../schemas';
+import { agents, chatGroups, chatGroupsAgents } from '../schemas';
 import type { LobeChatDatabase } from '../type';
+import { normalizeInboxAgentAvatar } from '../utils/inboxAgent';
 import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 
 export class ChatGroupModel {
@@ -23,6 +24,37 @@ export class ChatGroupModel {
 
   private ownership = () =>
     buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, chatGroups);
+
+  /**
+   * Get member avatar metas (avatar + backgroundColor) grouped by chatGroupId,
+   * ordered by member order. Inbox members fall back to the default avatar.
+   */
+  getMemberAvatarsByGroupIds = async (
+    groupIds: string[],
+  ): Promise<Map<string, Array<{ avatar: string | null; backgroundColor: string | null }>>> => {
+    const map = new Map<string, Array<{ avatar: string | null; backgroundColor: string | null }>>();
+    if (groupIds.length === 0) return map;
+
+    const rows = await this.db
+      .select({
+        avatar: agents.avatar,
+        backgroundColor: agents.backgroundColor,
+        chatGroupId: chatGroupsAgents.chatGroupId,
+        slug: agents.slug,
+      })
+      .from(chatGroupsAgents)
+      .innerJoin(agents, eq(chatGroupsAgents.agentId, agents.id))
+      .where(inArray(chatGroupsAgents.chatGroupId, groupIds))
+      .orderBy(chatGroupsAgents.order);
+
+    for (const { avatar, backgroundColor, chatGroupId, slug } of rows) {
+      const list = map.get(chatGroupId) ?? [];
+      list.push({ avatar: normalizeInboxAgentAvatar(avatar, { slug }), backgroundColor });
+      map.set(chatGroupId, list);
+    }
+
+    return map;
+  };
 
   // ******* Query Methods ******* //
 
@@ -291,6 +323,46 @@ export class ChatGroupModel {
       orderBy: [chatGroupsAgents.order],
       where: and(eq(chatGroupsAgents.chatGroupId, groupId), this.agentsOwnership()),
     });
+  }
+
+  /**
+   * Read-only roster of a group's **enabled** agents joined with their agent meta
+   * (title/description) and membership role, ordered by member order.
+   *
+   * Used to inject the group member list — with the real `agt_*` IDs — into the
+   * supervisor/member runtime context so the orchestration model dispatches
+   * members by their actual IDs instead of hallucinating role names (which then
+   * fail to resolve to an agent, surfacing as "Agent member(s) failed to start").
+   *
+   * Disabled members are excluded (matching `getEnabledGroupAgents`): advertising
+   * them in `<group_participants>` would let the supervisor invoke a disabled
+   * agent, since the group-management runtime accepts whatever id it dispatches.
+   */
+  async getGroupAgentsWithMeta(groupId: string): Promise<
+    Array<{
+      agentId: string;
+      description: string | null;
+      role: string | null;
+      title: string | null;
+    }>
+  > {
+    return this.db
+      .select({
+        agentId: chatGroupsAgents.agentId,
+        description: agents.description,
+        role: chatGroupsAgents.role,
+        title: agents.title,
+      })
+      .from(chatGroupsAgents)
+      .innerJoin(agents, eq(chatGroupsAgents.agentId, agents.id))
+      .where(
+        and(
+          eq(chatGroupsAgents.chatGroupId, groupId),
+          eq(chatGroupsAgents.enabled, true),
+          this.agentsOwnership(),
+        ),
+      )
+      .orderBy(chatGroupsAgents.order);
   }
 
   async getEnabledGroupAgents(groupId: string): Promise<ChatGroupAgentItem[]> {

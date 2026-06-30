@@ -19,7 +19,6 @@ vi.mock('@lobechat/business-const', async (importOriginal) => {
 
   return {
     ...actual,
-    ENABLE_BUSINESS_FEATURES: false,
   };
 });
 
@@ -67,7 +66,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => navigateMock,
 }));
 
@@ -114,10 +113,20 @@ vi.mock('@/store/serverConfig', () => ({
 }));
 
 vi.mock('@/features/Conversation/store', () => ({
+  dataSelectors: {
+    getDisplayMessageById: () => () => undefined,
+  },
   useConversationStore: (selector: (state: unknown) => unknown) =>
     selector({
+      delAndRegenerateMessage: vi.fn(),
       deleteMessage: vi.fn(),
-      regenerateAssistantMessage: vi.fn(),
+      heteroOverloadRetryAttempts: {},
+      internal_beginHeteroOverloadWait: vi.fn(),
+      internal_endHeteroOverloadWait: vi.fn(),
+      isHeteroOverloadWaitAborted: () => false,
+      markHeteroOverloadRetryExhausted: vi.fn(),
+      recordHeteroOverloadRetry: vi.fn(),
+      resetHeteroOverloadRetry: vi.fn(),
     }),
 }));
 

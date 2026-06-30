@@ -40,6 +40,20 @@ const messageProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) 
   });
 });
 
+/**
+ * Shared input for the ownership-scoped message analytics queries
+ * (count / countByTopic / topicStats). Every field is an optional filter
+ * applied on top of the `userId × workspace` ownership predicate.
+ */
+const messageAnalyticsSchema = z.object({
+  agentId: z.string().optional(),
+  endDate: z.string().optional(),
+  range: z.tuple([z.string(), z.string()]).optional(),
+  role: z.string().optional(),
+  startDate: z.string().optional(),
+  topicId: z.string().optional(),
+});
+
 export const messageRouter = router({
   addFilesToMessage: messageProcedure
     .use(withScopedPermission('message:update'))
@@ -71,9 +85,9 @@ export const messageRouter = router({
     .input(
       z.object({
         agentId: z.string(),
-        groupId: z.string().nullable().optional(),
+        groupId: z.string().nullish(),
         messageGroupId: z.string(),
-        threadId: z.string().nullable().optional(),
+        threadId: z.string().nullish(),
         topicId: z.string(),
       }),
     )
@@ -102,17 +116,19 @@ export const messageRouter = router({
     }),
 
   count: messageProcedure
-    .input(
-      z
-        .object({
-          endDate: z.string().optional(),
-          range: z.tuple([z.string(), z.string()]).optional(),
-          startDate: z.string().optional(),
-        })
-        .optional(),
-    )
+    .input(messageAnalyticsSchema.optional())
     .query(async ({ ctx, input }) => {
       return ctx.messageModel.count(input);
+    }),
+
+  /**
+   * Count messages grouped by topic (server-side GROUP BY), sorted by count
+   * desc. Optionally scoped by agent / role / date range.
+   */
+  countByTopic: messageProcedure
+    .input(messageAnalyticsSchema.optional())
+    .query(async ({ ctx, input }) => {
+      return ctx.messageModel.countGroupByTopic(input);
     }),
 
   countWords: messageProcedure
@@ -139,9 +155,9 @@ export const messageRouter = router({
     .input(
       z.object({
         agentId: z.string(),
-        groupId: z.string().nullable().optional(),
+        groupId: z.string().nullish(),
         messageIds: z.array(z.string()),
-        threadId: z.string().nullable().optional(),
+        threadId: z.string().nullish(),
         topicId: z.string(),
       }),
     )
@@ -184,9 +200,9 @@ export const messageRouter = router({
       z.object({
         agentId: z.string(),
         content: z.string(),
-        groupId: z.string().nullable().optional(),
+        groupId: z.string().nullish(),
         messageGroupId: z.string(),
-        threadId: z.string().nullable().optional(),
+        threadId: z.string().nullish(),
         topicId: z.string(),
       }),
     )
@@ -209,13 +225,13 @@ export const messageRouter = router({
     .use(serverDatabase)
     .input(
       z.object({
-        agentId: z.string().nullable().optional(),
+        agentId: z.string().nullish(),
         current: z.number().optional(),
-        groupId: z.string().nullable().optional(),
+        groupId: z.string().nullish(),
         pageSize: z.number().optional(),
-        sessionId: z.string().nullable().optional(),
-        threadId: z.string().nullable().optional(),
-        topicId: z.string().nullable().optional(),
+        sessionId: z.string().nullish(),
+        threadId: z.string().nullish(),
+        topicId: z.string().nullish(),
         topicShareId: z.string().optional(),
       }),
     )
@@ -259,6 +275,17 @@ export const messageRouter = router({
   rankModels: messageProcedure.query(async ({ ctx }) => {
     return ctx.messageModel.rankModels();
   }),
+
+  /**
+   * Distribution of message counts per topic (topics / mean / median / p90 /
+   * p99 / one-shot ratio + histogram). Aggregated server-side; optionally
+   * scoped by agent / role / date range.
+   */
+  topicStats: messageProcedure
+    .input(messageAnalyticsSchema.optional())
+    .query(async ({ ctx, input }) => {
+      return ctx.messageModel.topicMessageStats(input);
+    }),
 
   removeAllMessages: messageProcedure
     .use(withScopedPermission('message:delete'))
@@ -320,7 +347,7 @@ export const messageRouter = router({
     .input(
       z
         .object({
-          groupId: z.string().nullable().optional(),
+          groupId: z.string().nullish(),
         })
         .extend(basicContextSchema.shape),
     )
@@ -345,7 +372,7 @@ export const messageRouter = router({
     .input(
       z.object({
         groupId: z.string(),
-        topicId: z.string().nullable().optional(),
+        topicId: z.string().nullish(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -418,8 +445,8 @@ export const messageRouter = router({
       z.object({
         context: z.object({
           agentId: z.string(),
-          groupId: z.string().nullable().optional(),
-          threadId: z.string().nullable().optional(),
+          groupId: z.string().nullish(),
+          threadId: z.string().nullish(),
           topicId: z.string(),
         }),
         expanded: z.boolean().optional(),

@@ -7,7 +7,7 @@ import { cx } from 'antd-style';
 import { type FC } from 'react';
 import { Suspense } from 'react';
 import { HotkeysProvider } from 'react-hotkeys-hook';
-import { Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router';
 
 import WorkspaceContextSlot from '@/business/client/WorkspaceContextSlot';
 import Loading from '@/components/Loading/BrandTextLoading';
@@ -26,7 +26,6 @@ import HotkeyHelperPanel from '@/features/HotkeyHelperPanel';
 import NavPanel from '@/features/NavPanel';
 import { RouteMetaBridge } from '@/features/RouteMeta';
 import { usePlatform } from '@/hooks/usePlatform';
-import { MarketAuthProvider } from '@/layout/AuthProvider/MarketAuth';
 import CmdkLazy from '@/layout/GlobalProvider/CmdkLazy';
 import dynamic from '@/libs/next/dynamic';
 import { DndContextWrapper } from '@/routes/(main)/resource/features/DndContextWrapper';
@@ -40,6 +39,9 @@ import RegisterHotkeys from './RegisterHotkeys';
 import { styles } from './style';
 
 const CloudBanner = dynamic(() => import('@/features/AlertBanner/CloudBanner'));
+const GlobalApprovalNotification = dynamic(
+  () => import('@/features/GlobalApprovalNotification'),
+);
 
 const Layout: FC = () => {
   const { isPWA } = usePlatform();
@@ -78,14 +80,12 @@ const Layout: FC = () => {
           >
             <NavPanel />
             <DesktopLayoutContainer>
-              <MarketAuthProvider isDesktop={isDesktop}>
-                <DesktopHomeLayout>
-                  <DesktopHome />
-                </DesktopHomeLayout>
-                <Suspense fallback={<Loading debugId="DesktopMainLayout > Outlet" />}>
-                  <Outlet />
-                </Suspense>
-              </MarketAuthProvider>
+              <DesktopHomeLayout>
+                <DesktopHome />
+              </DesktopHomeLayout>
+              <Suspense fallback={<Loading debugId="DesktopMainLayout > Outlet" />}>
+                <Outlet />
+              </Suspense>
             </DesktopLayoutContainer>
           </Flexbox>
         </DndContextWrapper>
@@ -93,6 +93,7 @@ const Layout: FC = () => {
           <HotkeyHelperPanel />
           <RegisterHotkeys />
           <CmdkLazy />
+          <GlobalApprovalNotification />
         </Suspense>
       </WorkspaceContextSlot>
     </HotkeysProvider>

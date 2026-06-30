@@ -1,14 +1,14 @@
 'use client';
 
+import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import { Block, Flexbox, Text } from '@lobehub/ui';
 import { cssVar } from 'antd-style';
 import { BotMessageSquareIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import useSWR from 'swr';
 
-import { SESSION_CHAT_TOPIC_URL } from '@/const/url';
 import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { agentHomeKeys } from '@/libs/swr/keys';
 import { topicService } from '@/services/topic';
@@ -40,7 +40,7 @@ const AgentRecentTopics = memo(() => {
           <WorkspaceLink
             key={topic.id}
             style={{ color: 'inherit', flexShrink: 0, textDecoration: 'none' }}
-            to={SESSION_CHAT_TOPIC_URL(aid!, topic.id)}
+            to={AGENT_CHAT_TOPIC_URL(aid!, topic.id)}
           >
             <Block
               clickable

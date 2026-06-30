@@ -1,3 +1,4 @@
+import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import type { ChatTopicMetadata, ChatTopicStatus } from '@lobechat/types';
 import { formatElapsedClockTime } from '@lobechat/utils';
 import { Flexbox, Icon, Skeleton, Tag, Text, Tooltip } from '@lobehub/ui';
@@ -9,9 +10,9 @@ import { useTranslation } from 'react-i18next';
 import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
 import DotsLoading from '@/components/DotsLoading';
 import RingLoadingIcon from '@/components/RingLoading';
-import { SESSION_CHAT_TOPIC_URL } from '@/const/url';
 import { isDesktop } from '@/const/version';
 import DirIcon from '@/features/ChatInput/ControlBar/DirIcon';
+import { useHasDraft } from '@/features/ChatInput/draftStorage';
 import NavItem from '@/features/NavPanel/components/NavItem';
 import { buildWorkspaceAwarePath } from '@/features/Workspace/workspaceAwarePath';
 import { getPlatformIcon } from '@/routes/(main)/agent/channel/const';
@@ -19,6 +20,7 @@ import { useAgentStore } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors';
 import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/selectors';
+import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 import { useElectronStore } from '@/store/electron';
 
 import { useTopicNavigation } from '../../hooks/useTopicNavigation';
@@ -167,10 +169,7 @@ const TopicItem = memo<TopicItemProps>(
     // Construct href for cmd+click support
     const href = useMemo(() => {
       if (!activeAgentId || !id) return undefined;
-      return buildWorkspaceAwarePath(
-        SESSION_CHAT_TOPIC_URL(activeAgentId, id),
-        activeWorkspaceSlug,
-      );
+      return buildWorkspaceAwarePath(AGENT_CHAT_TOPIC_URL(activeAgentId, id), activeWorkspaceSlug);
     }, [activeAgentId, activeWorkspaceSlug, id]);
 
     const [editing, isLoading] = useChatStore((s) => [
@@ -224,9 +223,9 @@ const TopicItem = memo<TopicItemProps>(
         void navigateToTopic(id, { skipPopupFocus: true });
         return;
       }
-      addTab(SESSION_CHAT_TOPIC_URL(activeAgentId, id));
+      addTab(buildWorkspaceAwarePath(AGENT_CHAT_TOPIC_URL(activeAgentId, id), activeWorkspaceSlug));
       void navigateToTopic(id);
-    }, [id, activeAgentId, addTab, focusTopicPopup, navigateToTopic]);
+    }, [id, activeAgentId, activeWorkspaceSlug, addTab, focusTopicPopup, navigateToTopic]);
 
     const { dropdownMenu } = useTopicItemDropdownMenu({
       fav,
@@ -263,11 +262,27 @@ const TopicItem = memo<TopicItemProps>(
       </span>
     );
 
+    // Surface a WeChat-style red "[Draft]" hint when this topic holds unsent
+    // input. Drafts live in localStorage keyed by messageMapKey; the default
+    // topic (no id) maps to the new-topic draft. `useHasDraft` re-renders the
+    // row only when the draft appears or clears.
+    const draftKey = useMemo(
+      () => (activeAgentId ? messageMapKey({ agentId: activeAgentId, topicId: id }) : undefined),
+      [activeAgentId, id],
+    );
+    const hasDraft = useHasDraft(draftKey);
+    const draftPrefix = hasDraft ? (
+      <Text fontSize={12} style={{ color: cssVar.colorError, flex: 'none' }}>
+        {t('draft')}
+      </Text>
+    ) : undefined;
+
     // For default topic (no id)
     if (!id) {
       return (
         <NavItem
           active={Boolean(active && !isInAgentSubRoute && !isInTopicContextRoute)}
+          slots={{ titlePrefix: draftPrefix }}
           titleColor={cssVar.colorText}
           icon={
             isLoading ? (
@@ -309,6 +324,7 @@ const TopicItem = memo<TopicItemProps>(
           disabled={editing}
           extra={<RunningElapsedTime agentId={activeAgentId} topicId={id} />}
           href={href}
+          slots={{ titlePrefix: draftPrefix }}
           title={title === '...' ? <DotsLoading gap={3} size={4} /> : title}
           titleColor={cssVar.colorText}
           icon={(() => {
