@@ -8,6 +8,7 @@ import { aiChatService } from '@/services/aiChat';
 import { chatService } from '@/services/chat';
 import { messageService } from '@/services/message';
 import * as agentGroupStore from '@/store/agentGroup';
+import { setPendingTopicRepos } from '@/store/chat/pendingTopicRepos';
 import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 import { topicMapKey } from '@/store/chat/utils/topicMapKey';
 import { getSessionStoreState } from '@/store/session';
@@ -78,6 +79,7 @@ beforeEach(() => {
 afterEach(() => {
   executeHeterogeneousAgentMock.mockReset();
   mockConstEnv.isDesktop = false;
+  setPendingTopicRepos(TEST_IDS.SESSION_ID, []);
   vi.restoreAllMocks();
 });
 
@@ -565,6 +567,82 @@ describe('ConversationLifecycle actions', () => {
         expect(useChatStore.getState().topicLoadingIds).not.toContain(newTopicId);
       });
 
+      it('should keep a gateway optimistic topic in its pending repo project group', async () => {
+        const { result } = renderHook(() => useChatStore());
+        const agentId = TEST_IDS.SESSION_ID;
+        const topicKey = topicMapKey({ agentId });
+        const selectedRepo = 'https://github.com/lobehub/lobehub';
+        let resolveGateway!: () => void;
+        const gatewayPromise = new Promise<any>((resolve) => {
+          resolveGateway = () =>
+            resolve({
+              assistantMessageId: TEST_IDS.ASSISTANT_MESSAGE_ID,
+              operationId: 'gateway-op-1',
+              userMessageId: TEST_IDS.USER_MESSAGE_ID,
+            });
+        });
+        const executeGatewayAgentSpy = vi.fn().mockReturnValue(gatewayPromise);
+
+        setPendingTopicRepos(agentId, [selectedRepo]);
+
+        act(() => {
+          useChatStore.setState({
+            activeAgentId: agentId,
+            activeTopicId: undefined,
+            executeGatewayAgent: executeGatewayAgentSpy,
+            isGatewayModeEnabled: () => true,
+            topicDataMap: {
+              [topicKey]: {
+                currentPage: 0,
+                hasMore: false,
+                isExpandingPageSize: false,
+                isLoadingMore: false,
+                items: [],
+                pageSize: 20,
+                total: 0,
+              },
+            },
+          });
+        });
+
+        let sendPromise!: ReturnType<typeof result.current.sendMessage>;
+        act(() => {
+          sendPromise = result.current.sendMessage({
+            context: { agentId, threadId: null, topicId: null },
+            message: 'Create a project topic',
+          });
+        });
+
+        await waitFor(() => expect(executeGatewayAgentSpy).toHaveBeenCalled());
+
+        // A pending repo selected before the first send used to be missing from
+        // the tmp topic, so By Project grouped it under "No directory" until
+        // the server topic replaced it.
+        expect(useChatStore.getState().topicDataMap[topicKey]?.items[0]).toEqual(
+          expect.objectContaining({
+            metadata: {
+              repos: [selectedRepo],
+              workingDirectory: selectedRepo,
+            },
+          }),
+        );
+        expect(executeGatewayAgentSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            optimisticTopic: expect.objectContaining({
+              metadata: {
+                repos: [selectedRepo],
+                workingDirectory: selectedRepo,
+              },
+            }),
+          }),
+        );
+
+        await act(async () => {
+          resolveGateway();
+          await sendPromise;
+        });
+      });
+
       it('should rollback an optimistic topic if the create response resolves without a topic id', async () => {
         const { result } = renderHook(() => useChatStore());
         const agentId = TEST_IDS.SESSION_ID;
@@ -998,6 +1076,114 @@ describe('ConversationLifecycle actions', () => {
           }),
           'op-cc-running',
         );
+      });
+
+      it('should enqueue while the first new-topic message is still being persisted', async () => {
+        const { result } = renderHook(() => useChatStore());
+        const context = createTestContext();
+        const contextKey = messageMapKey(context);
+
+        act(() => {
+          useChatStore.setState({
+            operations: {
+              'op-send-running': {
+                childOperationIds: [],
+                context: { ...context, messageId: 'tmp-first-user-message' },
+                id: 'op-send-running',
+                metadata: {},
+                status: 'running',
+                type: 'sendMessage',
+              },
+            } as any,
+            operationsByContext: {
+              [contextKey]: ['op-send-running'],
+            },
+          });
+        });
+
+        const enqueueMessageSpy = vi.spyOn(result.current, 'enqueueMessage');
+        const sendMessageInServerSpy = vi
+          .spyOn(aiChatService, 'sendMessageInServer')
+          .mockResolvedValue({
+            assistantMessageId: TEST_IDS.ASSISTANT_MESSAGE_ID,
+            isCreateNewTopic: true,
+            messages: [
+              createMockMessage({ id: TEST_IDS.USER_MESSAGE_ID, role: 'user' }),
+              createMockMessage({ id: TEST_IDS.ASSISTANT_MESSAGE_ID, role: 'assistant' }),
+            ],
+            topicId: TEST_IDS.TOPIC_ID,
+            userMessageId: TEST_IDS.USER_MESSAGE_ID,
+          } as any);
+
+        await act(async () => {
+          await result.current.sendMessage({
+            context,
+            message: 'fast follow-up before topic is created',
+          });
+        });
+
+        expect(enqueueMessageSpy).toHaveBeenCalledWith(
+          contextKey,
+          expect.objectContaining({
+            content: 'fast follow-up before topic is created',
+            interruptMode: 'soft',
+          }),
+          'op-send-running',
+        );
+        expect(sendMessageInServerSpy).not.toHaveBeenCalled();
+      });
+
+      it('should move queued follow-ups from the new-topic key to the created topic key', async () => {
+        const { result } = renderHook(() => useChatStore());
+        const agentId = TEST_IDS.SESSION_ID;
+        const createdTopicId = 'created-topic-id';
+        const newTopicKey = messageMapKey({ agentId, topicId: null });
+        const createdTopicKey = messageMapKey({ agentId, topicId: createdTopicId });
+        const queuedMessage = {
+          content: 'queued while topic is being created',
+          createdAt: Date.now(),
+          id: 'queued-before-topic-created',
+          interruptMode: 'soft' as const,
+        };
+
+        act(() => {
+          useChatStore.setState({
+            activeAgentId: agentId,
+            activeTopicId: undefined,
+            queuedMessages: {
+              [newTopicKey]: [queuedMessage],
+            },
+          });
+        });
+
+        vi.spyOn(aiChatService, 'sendMessageInServer').mockResolvedValue({
+          assistantMessageId: TEST_IDS.ASSISTANT_MESSAGE_ID,
+          isCreateNewTopic: true,
+          messages: [
+            createMockMessage({
+              id: TEST_IDS.USER_MESSAGE_ID,
+              role: 'user',
+              topicId: createdTopicId,
+            }),
+            createMockMessage({
+              id: TEST_IDS.ASSISTANT_MESSAGE_ID,
+              role: 'assistant',
+              topicId: createdTopicId,
+            }),
+          ],
+          topicId: createdTopicId,
+          userMessageId: TEST_IDS.USER_MESSAGE_ID,
+        } as any);
+
+        await act(async () => {
+          await result.current.sendMessage({
+            context: { agentId, threadId: null, topicId: null },
+            message: TEST_CONTENT.USER_MESSAGE,
+          });
+        });
+
+        expect(useChatStore.getState().queuedMessages[newTopicKey] ?? []).toEqual([]);
+        expect(useChatStore.getState().queuedMessages[createdTopicKey]).toEqual([queuedMessage]);
       });
     });
 
